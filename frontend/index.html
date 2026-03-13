@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LUCA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="backdrop"></div>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Amazon Nova MVP</p>
+      <h1>LUCA</h1>
+      <p class="lede">Reverse engineer unfamiliar services for agents, infer auth and endpoints, and generate a validated Python bundle.</p>
+      <div class="hero-grid">
+        <article class="card form-card">
+          <h2>Create Session</h2>
+          <form id="session-form">
+            <label>
+              <span>API URL</span>
+              <input id="api-url" name="api_url" type="url" placeholder="https://api.github.com" required>
+            </label>
+            <label>
+              <span>Docs URL</span>
+              <input id="docs-url" name="docs_url" type="url" placeholder="https://docs.example.com">
+            </label>
+            <label>
+              <span>Token (optional)</span>
+              <input id="token" name="token" type="password" placeholder="Paste a bearer token or API key">
+            </label>
+            <label>
+              <span>Custom Header Name</span>
+              <input id="header-name" name="header_name" type="text" placeholder="Authorization or X-API-Key">
+            </label>
+            <button type="submit">Create Session</button>
+          </form>
+          <p class="muted">Tip: Use GitHub for the public flow and Notion for the authenticated demo.</p>
+        </article>
+
+        <article class="card status-card">
+          <div class="status-row">
+            <div>
+              <p class="label">Session</p>
+              <p id="session-id" class="mono">No session yet</p>
+            </div>
+            <div>
+              <p class="label">API Base</p>
+              <p id="api-base" class="mono">Loading...</p>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="discover-btn" disabled>Start Discovery</button>
+            <button id="generate-btn" disabled>Generate Bundle</button>
+          </div>
+          <div class="status-grid">
+            <div>
+              <p class="label">Status</p>
+              <p id="session-status">Idle</p>
+            </div>
+            <div>
+              <p class="label">Phase</p>
+              <p id="session-phase">created</p>
+            </div>
+            <div>
+              <p class="label">Endpoints</p>
+              <p id="endpoint-count">0</p>
+            </div>
+            <div>
+              <p class="label">Auth</p>
+              <p id="auth-type">unknown</p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="dashboard">
+      <article class="card">
+        <h2>Planner Timeline</h2>
+        <ul id="events" class="timeline"></ul>
+      </article>
+
+      <article class="card">
+        <h2>Endpoint Preview</h2>
+        <ul id="endpoints" class="list"></ul>
+      </article>
+
+      <article class="card">
+        <h2>Artifacts</h2>
+        <ul id="artifacts" class="list"></ul>
+      </article>
+    </section>
+  </main>
+
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

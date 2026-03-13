@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: LUCA Amazon Nova MVP
+
+Parameters:
+  BedrockTextModelId:
+    Type: String
+    Default: us.amazon.nova-lite-v1:0
+  BedrockEmbedModelId:
+    Type: String
+    Default: amazon.nova-2-multimodal-embeddings-v1:0
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 1024
+    Environment:
+      Variables:
+        AWS_REGION: !Ref AWS::Region
+        LUCA_APP_ENV: prod
+        LUCA_BEDROCK_TEXT_MODEL_ID: !Ref BedrockTextModelId
+        LUCA_BEDROCK_EMBED_MODEL_ID: !Ref BedrockEmbedModelId
+        LUCA_DDB_TABLE: !Ref SessionsTable
+        LUCA_ARTIFACTS_BUCKET: !Ref ArtifactsBucket
+        LUCA_STATIC_BUCKET: !Ref StaticBucket
+        LUCA_CLOUDFRONT_DISTRIBUTION_ID: !Ref StaticDistribution
+        LUCA_DISCOVERY_STATE_MACHINE_ARN: !Ref DiscoveryStateMachine
+        LUCA_GENERATION_STATE_MACHINE_ARN: !Ref GenerationStateMachine
+        LUCA_STORAGE_MODE: dynamodb
+        LUCA_ARTIFACT_MODE: s3
+        LUCA_WORKFLOW_MODE: stepfunctions
+
+Resources:
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at_epoch
+        Enabled: true
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+
+  StaticBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  StaticBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StaticBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${StaticBucket.Arn}/*"
+
+  StaticDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - DomainName: !GetAtt StaticBucket.RegionalDomainName
+            Id: StaticBucketOrigin
+            S3OriginConfig: {}
+        DefaultCacheBehavior:
+          TargetOriginId: StaticBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: true
+
+  LucaHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods: ["*"]
+        AllowHeaders: ["*"]
+        AllowOrigins: ["*"]
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend.app.main.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ArtifactsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource:
+                - !Ref DiscoveryStateMachine
+                - !Ref GenerationStateMachine
+      Events:
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LucaHttpApi
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref LucaHttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  WorkflowFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ..
+      Handler: backend.app.worker.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ArtifactsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:Converse
+                - bedrock:InvokeModel
+              Resource: "*"
+
+  DiscoveryStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      Definition:
+        StartAt: RunDiscovery
+        States:
+          RunDiscovery:
+            Type: Task
+            Resource: !GetAtt WorkflowFunction.Arn
+            End: true
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowFunction
+
+  GenerationStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      Definition:
+        StartAt: RunGeneration
+        States:
+          RunGeneration:
+            Type: Task
+            Resource: !GetAtt WorkflowFunction.Arn
+            End: true
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowFunction
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${LucaHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  StaticBucketName:
+    Value: !Ref StaticBucket
+  ArtifactsBucketName:
+    Value: !Ref ArtifactsBucket
+  CloudFrontDomain:
+    Value: !GetAtt StaticDistribution.DomainName
